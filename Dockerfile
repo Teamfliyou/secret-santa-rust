@@ -21,13 +21,11 @@ RUN touch src/main.rs src/lib.rs && cargo build --release
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --home /app santa \
-    && mkdir -p /data && chown santa /data
+    && useradd --system --uid 10001 --home /app santa
 WORKDIR /app
 COPY --from=builder /app/target/release/secret-santa /usr/local/bin/secret-santa
 
-ENV DATABASE_PATH=/data/santa.db \
-    BIND_ADDR=0.0.0.0:3000 \
+ENV BIND_ADDR=0.0.0.0:3000 \
     RUST_LOG=secret_santa=info
 
 USER santa
