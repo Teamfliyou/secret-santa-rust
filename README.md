@@ -1,6 +1,6 @@
 # 🎄 Secret Santa — application web pour une classe
 
-Application complète en **Rust** (Axum + Askama + SQLite/SQLx), responsive et mobile-first, avec une animation d'enveloppe qui tombe du ciel pour révéler son destinataire.
+Application complète en **Rust** (Axum + Askama + PostgreSQL/SQLx), responsive et mobile-first, avec une animation d'enveloppe qui tombe du ciel pour révéler son destinataire.
 
 - Comptes élèves créés **uniquement par l'administrateur** (identifiant seul ; chaque élève choisit son mot de passe à la première connexion, hash Argon2id). Une seule page de connexion pour tous.
 - Questionnaire de préférences, modifiable à tout moment.
@@ -11,7 +11,13 @@ Application complète en **Rust** (Axum + Askama + SQLite/SQLx), responsive et m
 
 ## 1. Installer le projet
 
-Prérequis : [Rust](https://rustup.rs) stable (≥ 1.80) et un compilateur C (SQLite est compilé avec le projet).
+Prérequis : [Rust](https://rustup.rs) stable (≥ 1.80) et un serveur **PostgreSQL ≥ 12**.
+
+Créer la base (une fois) :
+
+```bash
+createdb santa   # ou : psql -c "CREATE USER santa PASSWORD 'santa'" && psql -c "CREATE DATABASE santa OWNER santa"
+```
 
 ```bash
 git clone <ton-depot> secret-santa && cd secret-santa
@@ -26,7 +32,8 @@ Voir [`.env.example`](.env.example) :
 |---|---|---|
 | `ADMIN_USERNAME` | identifiant admin | `admin` |
 | `ADMIN_PASSWORD` | mot de passe admin (voir §3) | généré aléatoirement |
-| `DATABASE_PATH` | fichier SQLite | `data/santa.db` |
+| `DATABASE_URL` | connexion PostgreSQL | `postgres://santa:santa@localhost:5432/santa` |
+| `POSTGRES_PASSWORD` | mot de passe PostgreSQL (Docker Compose) | — |
 | `BIND_ADDR` | adresse d'écoute | `0.0.0.0:3000` |
 | `COOKIE_SECURE` | `true` en HTTPS (production) | `false` |
 | `TRUST_PROXY` | `true` derrière un reverse proxy de confiance | `false` |
@@ -56,9 +63,9 @@ Production (Docker) :
 docker compose up -d --build
 ```
 
-La base SQLite est dans le volume Docker `santa-data` (`/data/santa.db`) et survit aux redémarrages et mises à jour. Le conteneur n'écoute que sur `127.0.0.1:3000` : place un reverse proxy HTTPS devant (§6). Endpoint de santé : `GET /health`.
+Docker Compose démarre PostgreSQL 16 (volume `santa-pgdata`) et l'application ; les données survivent aux redémarrages et mises à jour. Définis `POSTGRES_PASSWORD` dans `.env` avant de lancer. Le conteneur n'écoute que sur `127.0.0.1:3000` : place un reverse proxy HTTPS devant (§6). Endpoint de santé : `GET /health`.
 
-Pensez à mettre `COOKIE_SECURE=true` (et `TRUST_PROXY=true`) dans `.env` en production.
+Pense à mettre `COOKIE_SECURE=true` (et `TRUST_PROXY=true`) dans `.env` en production.
 
 ## 5. Déroulé conseillé et import des élèves
 
@@ -107,12 +114,14 @@ Puis dans `.env` : `COOKIE_SECURE=true` et `TRUST_PROXY=true`, et `docker compos
 ## 7. Sauvegarder la base
 
 ```bash
-# sauvegarde à chaud, cohérente (ne nécessite pas d'arrêter le site)
-docker run --rm -v secret-santa_santa-data:/data -v "$PWD":/backup alpine \
-  sh -c 'apk add --no-cache sqlite >/dev/null && sqlite3 /data/santa.db ".backup /backup/santa-$(date +%F).db"'
+# sauvegarde (à chaud)
+docker compose exec -T db pg_dump -U santa santa > santa-$(date +%F).sql
+
+# restauration (sur une base vide)
+docker compose exec -T db psql -U santa santa < santa-2026-12-01.sql
 ```
 
-Restauration : arrêter le service, remplacer `/data/santa.db` par la sauvegarde (supprimer aussi `santa.db-wal` et `santa.db-shm`), relancer. En développement, il suffit de copier `data/santa.db` (service arrêté).
+Hors Docker : `pg_dump "$DATABASE_URL" > sauvegarde.sql`.
 
 ## 8. Mettre à jour sans perdre les données
 
@@ -133,7 +142,7 @@ src/
   draw.rs          dérangement aléatoire + tirage transactionnel
   web/             handlers : public (login), student, admin
   templates.rs     structures Askama      →  templates/*.html
-migrations/        schéma SQLite (contraintes CHECK/UNIQUE/FK + triggers)
+migrations/        schéma PostgreSQL (contraintes CHECK/UNIQUE/FK + triggers)
 static/            style.css, app.js (animations), early.js
 tests/app.rs       tests d'intégration de bout en bout
 ```
@@ -141,17 +150,22 @@ tests/app.rs       tests d'intégration de bout en bout
 Points de sécurité notables :
 
 - Les droits sont toujours déduits de la **session serveur** ; aucun identifiant d'URL ne détermine quel destinataire est affiché.
-- Triggers SQL : les attributions ne peuvent être créées qu'après le tirage, ne sont ni modifiables ni supprimables ; `giver_id` et `receiver_id` sont uniques et distincts.
+- Triggers PostgreSQL : les attributions ne peuvent être créées qu'après le tirage, ne sont ni modifiables ni supprimables ; `giver_id` et `receiver_id` sont uniques et distincts.
 - Le tirage commence par une écriture conditionnelle dans une transaction : deux demandes simultanées ne peuvent pas produire deux tirages.
 - CSP `default-src 'self'` (aucun script/style inline), `X-Frame-Options: DENY`, `nosniff`.
 
 ## Tests et qualité
 
+Les tests d'intégration créent une base PostgreSQL jetable par test : il faut un serveur dont l'utilisateur peut créer des bases, indiqué par `TEST_DATABASE_URL` (défaut `postgres://postgres:postgres@localhost:5432/postgres`).
+
 ```bash
+export TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 cargo fmt
 cargo check
 cargo test
 cargo clippy --all-targets
 ```
+
+Les bases de test s'appellent `santa_test_*` ; supprime-les quand tu veux (`DROP DATABASE`).
 
 > Sous Windows avec la toolchain `*-gnu`, un chemin de projet très long peut faire échouer la compilation (`dlltool`) : définis `CARGO_TARGET_DIR` vers un chemin court, par ex. `C:\t\santa`.

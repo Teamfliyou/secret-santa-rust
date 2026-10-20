@@ -5,7 +5,7 @@ pub mod student;
 use askama::Template;
 use axum::response::Html;
 use serde::Deserialize;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use crate::auth::Session;
 use crate::error::AppError;
@@ -20,7 +20,7 @@ pub fn page<T: Template>(t: T) -> Result<Html<String>, AppError> {
     Ok(Html(t.render()?))
 }
 
-pub async fn load_settings(db: &SqlitePool) -> Result<Settings, AppError> {
+pub async fn load_settings(db: &PgPool) -> Result<Settings, AppError> {
     Ok(sqlx::query_as::<_, Settings>(
         "SELECT class_name, event_name, budget, exchange_date, welcome_message, draw_completed_at, reveal_enabled
          FROM event_settings WHERE id = 1",
@@ -29,14 +29,9 @@ pub async fn load_settings(db: &SqlitePool) -> Result<Settings, AppError> {
     .await?)
 }
 
-pub async fn audit(
-    db: &SqlitePool,
-    s: &Session,
-    action: &str,
-    details: &str,
-) -> Result<(), AppError> {
+pub async fn audit(db: &PgPool, s: &Session, action: &str, details: &str) -> Result<(), AppError> {
     sqlx::query(
-        "INSERT INTO audit_log (actor_id, actor_name, action, details) VALUES (?, ?, ?, ?)",
+        "INSERT INTO audit_log (actor_id, actor_name, action, details) VALUES ($1, $2, $3, $4)",
     )
     .bind(s.user.id)
     .bind(&s.user.username)

@@ -10,7 +10,7 @@ use axum::http::header::HeaderMap;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use crate::error::AppError;
 use crate::util::{ct_eq, random_token, sha256_hex};
@@ -93,26 +93,26 @@ pub async fn create_session(state: &AppState, user_id: i64) -> Result<String, Ap
     let csrf = random_token();
     sqlx::query(
         "INSERT INTO sessions (token_hash, user_id, csrf_token, expires_at)
-         VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?))",
+         VALUES ($1, $2, $3, now() + make_interval(days => $4))",
     )
     .bind(sha256_hex(&token))
     .bind(user_id)
     .bind(csrf)
-    .bind(format!("+{} days", state.cfg.session_days))
+    .bind(state.cfg.session_days as i32)
     .execute(&state.db)
     .await?;
     Ok(token)
 }
 
-pub async fn destroy_session(db: &SqlitePool, token: &str) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM sessions WHERE token_hash = ?")
+pub async fn destroy_session(db: &PgPool, token: &str) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
         .bind(sha256_hex(token))
         .execute(db)
         .await?;
     Ok(())
 }
 
-pub async fn load_session(headers: &HeaderMap, db: &SqlitePool) -> Option<Session> {
+pub async fn load_session(headers: &HeaderMap, db: &PgPool) -> Option<Session> {
     let jar = CookieJar::from_headers(headers);
     let token = jar.get(SESSION_COOKIE)?.value().to_string();
     if token.len() != 64 {
@@ -122,7 +122,7 @@ pub async fn load_session(headers: &HeaderMap, db: &SqlitePool) -> Option<Sessio
     let row: Option<(i64, String, String, String, String, String, bool)> = sqlx::query_as(
         "SELECT u.id, u.username, u.first_name, u.last_name, u.role, s.csrf_token, (u.password_hash = '')
          FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = ? AND s.expires_at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
+         WHERE s.token_hash = $1 AND s.expires_at > now()",
     )
     .bind(sha256_hex(&token))
     .fetch_optional(db)

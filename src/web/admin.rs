@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::Form;
 use serde::Deserialize;
-use sqlx::SqliteConnection;
+use sqlx::PgConnection;
 
 use crate::auth::{AdminSession, LOGIN_MAX_PER_USER, LOGIN_WINDOW};
 use crate::draw::{perform_draw, DrawError};
@@ -141,7 +141,7 @@ async fn draw_done(state: &AppState) -> Result<bool, AppError> {
 
 /// Génère un identifiant libre à partir du prénom et du nom (`prenom.nom`, `prenom.nom2`, …).
 async fn unique_username(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     first: &str,
     last: &str,
 ) -> Result<String, sqlx::Error> {
@@ -156,11 +156,12 @@ async fn unique_username(
     let mut candidate = base.clone();
     let mut n = 1;
     loop {
-        let taken: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
-                .bind(&candidate)
-                .fetch_one(&mut *conn)
-                .await?;
+        let taken: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE lower(username) = lower($1))",
+        )
+        .bind(&candidate)
+        .fetch_one(&mut *conn)
+        .await?;
         if !taken {
             return Ok(candidate);
         }
@@ -212,18 +213,19 @@ pub async fn student_add(
     let username = if wanted.is_empty() {
         unique_username(&mut tx, &first, &last).await?
     } else {
-        let taken: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
-                .bind(&wanted)
-                .fetch_one(&mut *tx)
-                .await?;
+        let taken: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE lower(username) = lower($1))",
+        )
+        .bind(&wanted)
+        .fetch_one(&mut *tx)
+        .await?;
         if taken {
             drop(tx);
             return err("Cet identifiant est déjà utilisé.").await;
         }
         wanted
     };
-    sqlx::query("INSERT INTO users (username, first_name, last_name, password_hash, role) VALUES (?, ?, ?, '', 'student')")
+    sqlx::query("INSERT INTO users (username, first_name, last_name, password_hash, role) VALUES ($1, $2, $3, '', 'student')")
         .bind(&username)
         .bind(&first)
         .bind(&last)
@@ -344,11 +346,12 @@ pub async fn students_import(
         let username = if wanted.is_empty() {
             unique_username(&mut tx, first, last).await?
         } else {
-            let taken: bool =
-                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
-                    .bind(wanted)
-                    .fetch_one(&mut *tx)
-                    .await?;
+            let taken: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE lower(username) = lower($1))",
+            )
+            .bind(wanted)
+            .fetch_one(&mut *tx)
+            .await?;
             if taken {
                 problems.push(format!(
                     "{first} {last} : identifiant « {wanted} » déjà pris, un autre a été généré."
@@ -358,7 +361,7 @@ pub async fn students_import(
                 wanted.clone()
             }
         };
-        sqlx::query("INSERT INTO users (username, first_name, last_name, password_hash, role) VALUES (?, ?, ?, '', 'student')")
+        sqlx::query("INSERT INTO users (username, first_name, last_name, password_hash, role) VALUES ($1, $2, $3, '', 'student')")
             .bind(&username)
             .bind(first)
             .bind(last)
@@ -438,12 +441,13 @@ pub async fn student_edit(
     } else {
         None
     };
-    let taken: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? AND id <> ?)")
-            .bind(&username)
-            .bind(id)
-            .fetch_one(&state.db)
-            .await?;
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE lower(username) = lower($1) AND id <> $2)",
+    )
+    .bind(&username)
+    .bind(id)
+    .fetch_one(&state.db)
+    .await?;
     let problem = problem.or(if taken {
         Some("Cet identifiant est déjà utilisé.")
     } else {
@@ -455,8 +459,8 @@ pub async fn student_edit(
         return Ok((StatusCode::UNPROCESSABLE_ENTITY, html).into_response());
     }
     sqlx::query(
-        "UPDATE users SET first_name = ?, last_name = ?, username = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-         WHERE id = ? AND role = 'student'",
+        "UPDATE users SET first_name = $1, last_name = $2, username = $3, updated_at = iso_now()
+         WHERE id = $4 AND role = 'student'",
     )
     .bind(&first)
     .bind(&last)
@@ -483,11 +487,11 @@ pub async fn student_reset(
     s.check_csrf(&f.csrf)?;
     let student = find_student(&state, id).await?;
     let mut tx = state.db.begin().await?;
-    sqlx::query("UPDATE users SET password_hash = '', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND role = 'student'")
+    sqlx::query("UPDATE users SET password_hash = '', updated_at = iso_now() WHERE id = $1 AND role = 'student'")
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1")
         .bind(id)
         .execute(&mut *tx)
         .await?;
@@ -521,7 +525,7 @@ pub async fn student_delete(
         .await;
     }
     let student = find_student(&state, id).await?;
-    sqlx::query("DELETE FROM users WHERE id = ? AND role = 'student'")
+    sqlx::query("DELETE FROM users WHERE id = $1 AND role = 'student'")
         .bind(id)
         .execute(&state.db)
         .await?;
@@ -582,7 +586,7 @@ pub async fn settings_save(
             .into_response());
     }
     sqlx::query(
-        "UPDATE event_settings SET class_name = ?, event_name = ?, budget = ?, exchange_date = ?, welcome_message = ? WHERE id = 1",
+        "UPDATE event_settings SET class_name = $1, event_name = $2, budget = $3, exchange_date = $4, welcome_message = $5 WHERE id = 1",
     )
     .bind(&cur.class_name)
     .bind(&cur.event_name)
@@ -677,7 +681,7 @@ pub async fn reveal_toggle(
 ) -> Result<Response, AppError> {
     s.check_csrf(&f.csrf)?;
     let enable = f.enabled == "1";
-    let r = sqlx::query("UPDATE event_settings SET reveal_enabled = ? WHERE id = 1 AND draw_completed_at IS NOT NULL")
+    let r = sqlx::query("UPDATE event_settings SET reveal_enabled = $1 WHERE id = 1 AND draw_completed_at IS NOT NULL")
         .bind(enable)
         .execute(&state.db)
         .await?;
@@ -743,7 +747,7 @@ pub async fn assignments_show(
     {
         return fail("Trop de tentatives. Patiente quelques minutes.");
     }
-    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = ?")
+    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
         .bind(s.user.id)
         .fetch_one(&state.db)
         .await?;

@@ -4,6 +4,7 @@ use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use axum::Router;
 use http_body_util::BodyExt;
+use sqlx::PgPool;
 use tower::ServiceExt;
 
 use secret_santa::config::Config;
@@ -110,10 +111,24 @@ fn csrf(body: &str) -> String {
     body[i..i + 64].to_string()
 }
 
+/// Chaque test travaille dans sa propre base PostgreSQL, créée à la volée.
+/// Serveur de test : variable `TEST_DATABASE_URL` (utilisateur autorisé à créer des bases).
 async fn test_app() -> (Router, AppState) {
-    let path = std::env::temp_dir().join(format!("santa-test-{}.db", random_token()));
+    let base = std::env::var("TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/postgres".into());
+    let (prefix, _) = base.rsplit_once('/').expect("TEST_DATABASE_URL invalide");
+    let name = format!("santa_test_{}", &random_token()[..16]);
+    let admin_pool = PgPool::connect(&base)
+        .await
+        .expect("serveur PostgreSQL de test");
+    sqlx::query(&format!("CREATE DATABASE {name}"))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+    admin_pool.close().await;
+    let url = format!("{prefix}/{name}");
     let cfg = Config {
-        database_path: path.to_string_lossy().into_owned(),
+        database_url: url,
         bind: String::new(),
         cookie_secure: false,
         trust_proxy: false,
@@ -132,7 +147,7 @@ async fn add_students(state: &AppState, n: usize, with_prefs: bool) -> Vec<(i64,
     for i in 1..=n {
         let username = format!("eleve{i}");
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO users (username, first_name, last_name, password_hash, role) VALUES (?, ?, ?, ?, 'student') RETURNING id",
+            "INSERT INTO users (username, first_name, last_name, password_hash, role) VALUES ($1, $2, $3, $4, 'student') RETURNING id",
         )
         .bind(&username)
         .bind(format!("Prenom{i}"))
@@ -152,7 +167,7 @@ async fn add_students(state: &AppState, n: usize, with_prefs: bool) -> Vec<(i64,
 async fn set_prefs(state: &AppState, user_id: i64) {
     sqlx::query(
         "INSERT INTO preferences (user_id, interests, hobbies, gift_types, favorite_colors, completed_at)
-         VALUES (?, ?, 'hobby', 'type', 'bleu', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+         VALUES ($1, $2, 'hobby', 'type', 'bleu', iso_now())",
     )
     .bind(user_id)
     .bind(format!("interet-secret-{user_id}"))
@@ -436,7 +451,7 @@ async fn preferences_are_validated_and_saved() {
         .contains("C'est enregistré"));
 
     let (interests, completed): (String, Option<String>) =
-        sqlx::query_as("SELECT interests, completed_at FROM preferences WHERE user_id = ?")
+        sqlx::query_as("SELECT interests, completed_at FROM preferences WHERE user_id = $1")
             .bind(ids[0].0)
             .fetch_one(&state.db)
             .await
@@ -479,7 +494,7 @@ async fn admin_sees_completion_but_not_preferences() {
 async fn draw_is_blocked_while_a_questionnaire_is_missing() {
     let (app, state) = test_app().await;
     let ids = add_students(&state, 4, true).await;
-    sqlx::query("UPDATE preferences SET completed_at = NULL WHERE user_id = ?")
+    sqlx::query("UPDATE preferences SET completed_at = NULL WHERE user_id = $1")
         .bind(ids[3].0)
         .execute(&state.db)
         .await
@@ -509,7 +524,11 @@ async fn draw_is_blocked_while_a_questionnaire_is_missing() {
     assert_eq!(r.status, StatusCode::CONFLICT);
     assert!(assignments(&state).await.is_empty());
 
-    sqlx::query("UPDATE preferences SET completed_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE user_id = ?").bind(ids[3].0).execute(&state.db).await.unwrap();
+    sqlx::query("UPDATE preferences SET completed_at = iso_now() WHERE user_id = $1")
+        .bind(ids[3].0)
+        .execute(&state.db)
+        .await
+        .unwrap();
     let page = a.get("/admin/draw").await;
     assert!(page.body.contains("data-open=\"draw-dialog\""));
     let t = csrf(&page.body);
@@ -603,24 +622,26 @@ async fn database_rejects_invalid_assignments() {
     let (a, b, c) = (ids[0].0, ids[1].0, ids[2].0);
 
     // pas d'attribution avant le tirage
-    let r = sqlx::query("INSERT INTO assignments (giver_id, receiver_id) VALUES (?, ?)")
+    let r = sqlx::query("INSERT INTO assignments (giver_id, receiver_id) VALUES ($1, $2)")
         .bind(a)
         .bind(b)
         .execute(&state.db)
         .await;
     assert!(r.is_err());
     // pas d'autorisation de révélation avant le tirage
-    assert!(sqlx::query("UPDATE event_settings SET reveal_enabled = 1")
-        .execute(&state.db)
-        .await
-        .is_err());
+    assert!(
+        sqlx::query("UPDATE event_settings SET reveal_enabled = TRUE")
+            .execute(&state.db)
+            .await
+            .is_err()
+    );
 
     perform_draw(&state.db, admin_id(&state).await, "admin")
         .await
         .unwrap();
     // auto-attribution, doublons, modification et suppression : tout est refusé
     assert!(
-        sqlx::query("INSERT INTO assignments (giver_id, receiver_id) VALUES (?, ?)")
+        sqlx::query("INSERT INTO assignments (giver_id, receiver_id) VALUES ($1, $2)")
             .bind(a)
             .bind(a)
             .execute(&state.db)
@@ -628,7 +649,7 @@ async fn database_rejects_invalid_assignments() {
             .is_err()
     );
     assert!(
-        sqlx::query("INSERT INTO assignments (giver_id, receiver_id) VALUES (?, ?)")
+        sqlx::query("INSERT INTO assignments (giver_id, receiver_id) VALUES ($1, $2)")
             .bind(a)
             .bind(c)
             .execute(&state.db)
@@ -636,7 +657,7 @@ async fn database_rejects_invalid_assignments() {
             .is_err()
     );
     assert!(
-        sqlx::query("UPDATE assignments SET receiver_id = ? WHERE giver_id = ?")
+        sqlx::query("UPDATE assignments SET receiver_id = $1 WHERE giver_id = $2")
             .bind(c)
             .bind(a)
             .execute(&state.db)
@@ -647,7 +668,7 @@ async fn database_rejects_invalid_assignments() {
         .execute(&state.db)
         .await
         .is_err());
-    assert!(sqlx::query("DELETE FROM users WHERE id = ?")
+    assert!(sqlx::query("DELETE FROM users WHERE id = $1")
         .bind(a)
         .execute(&state.db)
         .await
@@ -703,7 +724,7 @@ async fn recipient_is_persistent_private_and_switchable() {
     // élève n°1 (id 2 car l'admin a l'id 1)
     let (giver_id, giver_name) = (2i64, "eleve1");
     let receiver_id = receiver_of[&giver_id];
-    let receiver_first: String = sqlx::query_scalar("SELECT first_name FROM users WHERE id = ?")
+    let receiver_first: String = sqlx::query_scalar("SELECT first_name FROM users WHERE id = $1")
         .bind(receiver_id)
         .fetch_one(&state.db)
         .await
@@ -726,7 +747,7 @@ async fn recipient_is_persistent_private_and_switchable() {
     assert!(card.body.contains(&format!("interet-secret-{receiver_id}")));
     assert!(card.body.contains("Tu vas offrir un cadeau à"));
     let first_reveal: String =
-        sqlx::query_scalar("SELECT revealed_at FROM assignments WHERE giver_id = ?")
+        sqlx::query_scalar("SELECT revealed_at FROM assignments WHERE giver_id = $1")
             .bind(giver_id)
             .fetch_one(&state.db)
             .await
@@ -757,7 +778,7 @@ async fn recipient_is_persistent_private_and_switchable() {
     let t3 = csrf(&home.body);
     again.post("/reveal", &[("csrf", &t3)]).await;
     let second: String =
-        sqlx::query_scalar("SELECT revealed_at FROM assignments WHERE giver_id = ?")
+        sqlx::query_scalar("SELECT revealed_at FROM assignments WHERE giver_id = $1")
             .bind(giver_id)
             .fetch_one(&state.db)
             .await

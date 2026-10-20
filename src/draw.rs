@@ -1,6 +1,6 @@
 use rand::rngs::OsRng;
 use rand::seq::SliceRandom;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 #[derive(Debug)]
 pub enum DrawError {
@@ -56,14 +56,14 @@ pub fn derangement(ids: &[i64]) -> Vec<(i64, i64)> {
 /// Le premier ordre SQL est une écriture conditionnelle : de deux requêtes concurrentes,
 /// une seule peut réussir. Toute erreur annule la transaction (rien n'est enregistré).
 pub async fn perform_draw(
-    pool: &SqlitePool,
+    pool: &PgPool,
     admin_id: i64,
     admin_name: &str,
 ) -> Result<usize, DrawError> {
     let mut tx = pool.begin().await?;
 
     let claimed = sqlx::query(
-        "UPDATE event_settings SET draw_completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+        "UPDATE event_settings SET draw_completed_at = iso_now()
          WHERE id = 1 AND draw_completed_at IS NULL",
     )
     .execute(&mut *tx)
@@ -92,7 +92,7 @@ pub async fn perform_draw(
 
     let pairs = derangement(&ids);
     for (giver, receiver) in &pairs {
-        sqlx::query("INSERT INTO assignments (giver_id, receiver_id) VALUES (?, ?)")
+        sqlx::query("INSERT INTO assignments (giver_id, receiver_id) VALUES ($1, $2)")
             .bind(giver)
             .bind(receiver)
             .execute(&mut *tx)
@@ -100,7 +100,7 @@ pub async fn perform_draw(
     }
 
     sqlx::query(
-        "INSERT INTO audit_log (actor_id, actor_name, action, details) VALUES (?, ?, 'draw', ?)",
+        "INSERT INTO audit_log (actor_id, actor_name, action, details) VALUES ($1, $2, 'draw', $3)",
     )
     .bind(admin_id)
     .bind(admin_name)

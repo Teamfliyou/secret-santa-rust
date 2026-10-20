@@ -6,7 +6,6 @@ pub mod templates;
 pub mod util;
 pub mod web;
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,44 +15,33 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::Router;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
-use sqlx::SqlitePool;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
 
 use crate::auth::RateLimiter;
 use crate::config::Config;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db: SqlitePool,
+    pub db: PgPool,
     pub cfg: Arc<Config>,
     pub limiter: Arc<RateLimiter>,
     /// Hash factice pour égaliser le temps de réponse quand l'identifiant n'existe pas.
     pub dummy_hash: Arc<String>,
 }
 
-pub async fn connect(path: &str) -> anyhow::Result<SqlitePool> {
-    if let Some(parent) = Path::new(path).parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
-    }
-    let opts = SqliteConnectOptions::new()
-        .filename(path)
-        .create_if_missing(true)
-        .foreign_keys(true)
-        .journal_mode(SqliteJournalMode::Wal)
-        .synchronous(SqliteSynchronous::Normal)
-        .busy_timeout(Duration::from_secs(10));
-    let pool = SqlitePoolOptions::new()
-        .max_connections(8)
-        .connect_with(opts)
+pub async fn connect(url: &str) -> anyhow::Result<PgPool> {
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .acquire_timeout(Duration::from_secs(10))
+        .connect(url)
         .await?;
     Ok(pool)
 }
 
 /// Ouvre la base, applique les migrations et crée / synchronise le compte administrateur.
 pub async fn setup(cfg: Config) -> anyhow::Result<AppState> {
-    let db = connect(&cfg.database_path).await?;
+    let db = connect(&cfg.database_url).await?;
     sqlx::migrate!("./migrations").run(&db).await?;
     let dummy_hash = util::hash_password_async(util::random_token()).await;
     let state = AppState {
@@ -68,22 +56,25 @@ pub async fn setup(cfg: Config) -> anyhow::Result<AppState> {
 
 async fn ensure_admin(state: &AppState) -> anyhow::Result<()> {
     let username = state.cfg.admin_username.trim().to_string();
-    let existing: Option<(i64, String)> =
-        sqlx::query_as("SELECT id, password_hash FROM users WHERE role = 'admin' AND username = ?")
-            .bind(&username)
-            .fetch_optional(&state.db)
-            .await?;
+    let existing: Option<(i64, String)> = sqlx::query_as(
+        "SELECT id, password_hash FROM users WHERE role = 'admin' AND lower(username) = lower($1)",
+    )
+    .bind(&username)
+    .fetch_optional(&state.db)
+    .await?;
     match (existing, &state.cfg.admin_password) {
         (Some((id, hash)), Some(pw)) => {
             // ADMIN_PASSWORD fait foi : si elle change, on met à jour le hash.
             if !util::verify_password_async(hash, pw.clone()).await {
                 let new_hash = util::hash_password_async(pw.clone()).await;
-                sqlx::query("UPDATE users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?")
-                    .bind(new_hash)
-                    .bind(id)
-                    .execute(&state.db)
-                    .await?;
-                sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+                sqlx::query(
+                    "UPDATE users SET password_hash = $1, updated_at = iso_now() WHERE id = $2",
+                )
+                .bind(new_hash)
+                .bind(id)
+                .execute(&state.db)
+                .await?;
+                sqlx::query("DELETE FROM sessions WHERE user_id = $1")
                     .bind(id)
                     .execute(&state.db)
                     .await?;
@@ -97,7 +88,7 @@ async fn ensure_admin(state: &AppState) -> anyhow::Result<()> {
                 None => (util::gen_code(), true),
             };
             let hash = util::hash_password_async(password.clone()).await;
-            sqlx::query("INSERT INTO users (username, first_name, last_name, password_hash, role) VALUES (?, 'Admin', 'Santa', ?, 'admin')")
+            sqlx::query("INSERT INTO users (username, first_name, last_name, password_hash, role) VALUES ($1, 'Admin', 'Santa', $2, 'admin')")
                 .bind(&username)
                 .bind(hash)
                 .execute(&state.db)
@@ -118,12 +109,10 @@ async fn ensure_admin(state: &AppState) -> anyhow::Result<()> {
 }
 
 /// Supprime les sessions expirées.
-pub async fn purge_expired_sessions(db: &SqlitePool) {
-    if let Err(e) = sqlx::query(
-        "DELETE FROM sessions WHERE expires_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
-    )
-    .execute(db)
-    .await
+pub async fn purge_expired_sessions(db: &PgPool) {
+    if let Err(e) = sqlx::query("DELETE FROM sessions WHERE expires_at <= now()")
+        .execute(db)
+        .await
     {
         tracing::warn!("nettoyage des sessions impossible : {e}");
     }

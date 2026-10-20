@@ -18,7 +18,7 @@ use crate::web::CsrfForm;
 use crate::AppState;
 
 pub async fn health(State(state): State<AppState>) -> (StatusCode, &'static str) {
-    match sqlx::query_scalar::<_, i64>("SELECT 1")
+    match sqlx::query_scalar::<_, i64>("SELECT 1::BIGINT")
         .fetch_one(&state.db)
         .await
     {
@@ -152,10 +152,12 @@ pub async fn login_post(
     }
 
     let row: Option<(i64, String, String)> = if username.len() <= 64 {
-        sqlx::query_as("SELECT id, password_hash, role FROM users WHERE username = ?")
-            .bind(&username)
-            .fetch_optional(&state.db)
-            .await?
+        sqlx::query_as(
+            "SELECT id, password_hash, role FROM users WHERE lower(username) = lower($1)",
+        )
+        .bind(&username)
+        .fetch_optional(&state.db)
+        .await?
     } else {
         None
     };
@@ -192,7 +194,7 @@ pub async fn login_post(
 
     state.limiter.clear(&ukey);
     let first_time = !is_admin && form.password.is_empty() && {
-        let unset: bool = sqlx::query_scalar("SELECT password_hash = '' FROM users WHERE id = ?")
+        let unset: bool = sqlx::query_scalar("SELECT password_hash = '' FROM users WHERE id = $1")
             .bind(user_id)
             .fetch_one(&state.db)
             .await?;
@@ -267,8 +269,8 @@ pub async fn set_password_save(
     }
     let hash = hash_password_async(f.password).await;
     sqlx::query(
-        "UPDATE users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
-         WHERE id = ? AND password_hash = '' AND role = 'student'",
+        "UPDATE users SET password_hash = $1, updated_at = iso_now()
+         WHERE id = $2 AND password_hash = '' AND role = 'student'",
     )
     .bind(hash)
     .bind(s.user.id)

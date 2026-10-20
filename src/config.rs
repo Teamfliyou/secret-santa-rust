@@ -2,7 +2,7 @@ use std::env;
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub database_path: String,
+    pub database_url: String,
     pub bind: String,
     pub cookie_secure: bool,
     pub trust_proxy: bool,
@@ -25,7 +25,8 @@ fn flag(name: &str, default: bool) -> bool {
 impl Config {
     pub fn from_env() -> Self {
         Self {
-            database_path: env::var("DATABASE_PATH").unwrap_or_else(|_| "data/santa.db".into()),
+            database_url: env::var("DATABASE_URL")
+                .unwrap_or_else(|_| "postgres://santa:santa@localhost:5432/santa".into()),
             bind: env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into()),
             cookie_secure: flag("COOKIE_SECURE", false),
             trust_proxy: flag("TRUST_PROXY", false),

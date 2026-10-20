@@ -15,7 +15,7 @@ use crate::AppState;
 
 async fn prefs_completed(state: &AppState, user_id: i64) -> Result<bool, AppError> {
     Ok(sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM preferences WHERE user_id = ? AND completed_at IS NOT NULL)",
+        "SELECT EXISTS(SELECT 1 FROM preferences WHERE user_id = $1 AND completed_at IS NOT NULL)",
     )
     .bind(user_id)
     .fetch_one(&state.db)
@@ -31,7 +31,7 @@ pub async fn dashboard(
     }
     let settings = load_settings(&state.db).await?;
     let revealed: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM assignments WHERE giver_id = ? AND revealed_at IS NOT NULL)",
+        "SELECT EXISTS(SELECT 1 FROM assignments WHERE giver_id = $1 AND revealed_at IS NOT NULL)",
     )
     .bind(s.user.id)
     .fetch_one(&state.db)
@@ -51,7 +51,7 @@ async fn load_prefs(state: &AppState, user_id: i64) -> Result<Option<PrefForm>, 
     #[allow(clippy::type_complexity)]
     let row: Option<(String, String, String, String, String, String, String, String, String)> = sqlx::query_as(
         "SELECT interests, hobbies, gift_types, favorite_snacks, favorite_colors, wishlist, dislikes,
-                food_restrictions, message FROM preferences WHERE user_id = ?",
+                food_restrictions, message FROM preferences WHERE user_id = $1",
     )
     .bind(user_id)
     .fetch_optional(&state.db)
@@ -165,14 +165,14 @@ pub async fn preferences_save(
     sqlx::query(
         "INSERT INTO preferences (user_id, interests, hobbies, gift_types, favorite_snacks, favorite_colors,
                                   wishlist, dislikes, food_restrictions, message, completed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, iso_now())
          ON CONFLICT(user_id) DO UPDATE SET
             interests = excluded.interests, hobbies = excluded.hobbies, gift_types = excluded.gift_types,
             favorite_snacks = excluded.favorite_snacks, favorite_colors = excluded.favorite_colors,
             wishlist = excluded.wishlist, dislikes = excluded.dislikes,
             food_restrictions = excluded.food_restrictions, message = excluded.message,
             completed_at = COALESCE(preferences.completed_at, excluded.completed_at),
-            updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
+            updated_at = iso_now()",
     )
     .bind(s.user.id)
     .bind(&v.interests)
@@ -217,8 +217,8 @@ pub async fn reveal(
         return Err(AppError::Forbidden);
     }
     let updated = sqlx::query(
-        "UPDATE assignments SET revealed_at = COALESCE(revealed_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-         WHERE giver_id = ?",
+        "UPDATE assignments SET revealed_at = COALESCE(revealed_at, iso_now())
+         WHERE giver_id = $1",
     )
     .bind(s.user.id)
     .execute(&state.db)
@@ -253,7 +253,7 @@ pub async fn recipient(
          FROM assignments a
          JOIN users u ON u.id = a.receiver_id
          LEFT JOIN preferences p ON p.user_id = u.id
-         WHERE a.giver_id = ? AND a.revealed_at IS NOT NULL",
+         WHERE a.giver_id = $1 AND a.revealed_at IS NOT NULL",
     )
     .bind(s.user.id)
     .fetch_optional(&state.db)
