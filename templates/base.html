@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#163A2B">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ ctx.title }} · Secret Santa</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%84%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/early.js"></script>
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <header class="topbar">
+    <a class="brand" href="{% if ctx.is_admin %}/admin{% else %}/{% endif %}"><span class="brand-star" aria-hidden="true">✦</span> Secret Santa</a>
+    {% if ctx.user.is_some() %}
+    <nav class="topnav" aria-label="Navigation">
+      {% if ctx.is_admin %}
+      <a href="/admin">Accueil</a>
+      <a href="/admin/students">Élèves</a>
+      <a href="/admin/draw">Tirage</a>
+      <a href="/admin/settings">Paramètres</a>
+      <a href="/admin/audit">Journal</a>
+      {% endif %}
+      <form method="post" action="/logout" class="inline">
+        <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+        <button class="btn btn-ghost btn-sm" type="submit">Déconnexion</button>
+      </form>
+    </nav>
+    {% endif %}
+  </header>
+  <main class="container {% block main_class %}{% endblock %}">
+    {% if let Some(f) = ctx.flash %}<div class="alert alert-ok" role="status">{{ f }}</div>{% endif %}
+    {% if let Some(e) = ctx.error %}<div class="alert alert-error" role="alert">{{ e }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

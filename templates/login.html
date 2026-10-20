@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body_class %}login-page{% endblock %}
+{% block content %}
+<div class="snow" aria-hidden="true"></div>
+<section class="card login-card">
+  <h1><span aria-hidden="true">🎄</span> Secret Santa</h1>
+  <p class="lead">Connecte-toi pour préparer ton cadeau de Noël !</p>
+  <form method="post" action="/login" class="form" autocomplete="on">
+    <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+    <label class="field">
+      <span>Identifiant</span>
+      <input type="text" name="username" value="{{ username }}" required maxlength="64" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" autofocus>
+    </label>
+    <label class="field">
+      <span>Mot de passe</span>
+      <input type="password" name="password" maxlength="256" autocomplete="current-password" autocapitalize="none">
+    </label>
+    <button class="btn btn-primary btn-block" type="submit">Se connecter →</button>
+  </form>
+  <p class="hint center">Première connexion ? Entre seulement ton identifiant, laisse le mot de passe vide : tu choisiras ensuite ton propre mot de passe.</p>
+</section>
+{% endblock %}

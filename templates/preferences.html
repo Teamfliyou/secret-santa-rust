@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card form-card">
+  <h1><span aria-hidden="true">🎁</span> Parlons un peu de toi !</h1>
+  <p class="lead">Remplis tes préférences pour aider la personne qui t'offrira un cadeau.</p>
+  <p class="hint">Ces informations ne sont visibles que par la personne qui t'offrira un cadeau, après le tirage. Les champs marqués * sont obligatoires.</p>
+  <form method="post" action="/preferences" class="form">
+    <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+    <label class="field">
+      <span>Quels sont tes centres d'intérêt ? *</span>
+      <textarea name="interests" rows="3" maxlength="600" required placeholder="Ex. : football, manga, cinéma, musique…">{{ v.interests }}</textarea>
+    </label>
+    <label class="field">
+      <span>Qu'aimes-tu faire pendant ton temps libre ? *</span>
+      <textarea name="hobbies" rows="3" maxlength="600" required placeholder="Ex. : dessiner, jouer en ligne, lire, sortir avec des amis…">{{ v.hobbies }}</textarea>
+    </label>
+    <label class="field">
+      <span>Quels types de cadeaux préfères-tu ? *</span>
+      <textarea name="gift_types" rows="3" maxlength="600" required placeholder="Ex. : objets utiles, déco, livres, accessoires, petites surprises…">{{ v.gift_types }}</textarea>
+    </label>
+    <label class="field">
+      <span>Quels sont tes bonbons ou snacks préférés ?</span>
+      <textarea name="favorite_snacks" rows="2" maxlength="600" placeholder="Ex. : chocolat au lait, bonbons acidulés, chips…">{{ v.favorite_snacks }}</textarea>
+    </label>
+    <label class="field">
+      <span>Quelles sont tes couleurs préférées ? *</span>
+      <textarea name="favorite_colors" rows="2" maxlength="600" required placeholder="Ex. : bleu nuit, vert, rose pâle…">{{ v.favorite_colors }}</textarea>
+    </label>
+    <label class="field">
+      <span>As-tu des idées de cadeaux précis ?</span>
+      <textarea name="wishlist" rows="3" maxlength="600" placeholder="Ex. : un carnet, une écharpe, un jeu de cartes…">{{ v.wishlist }}</textarea>
+    </label>
+    <label class="field">
+      <span>Qu'est-ce que tu n'aimes pas ?</span>
+      <textarea name="dislikes" rows="2" maxlength="600" placeholder="Ex. : le parfum, les peluches, la menthe…">{{ v.dislikes }}</textarea>
+    </label>
+    <label class="field">
+      <span>As-tu des restrictions alimentaires que tu souhaites indiquer ?</span>
+      <textarea name="food_restrictions" rows="2" maxlength="600" placeholder="Ex. : sans porc, végétarien, allergie aux arachides… (facultatif)">{{ v.food_restrictions }}</textarea>
+    </label>
+    <label class="field">
+      <span>Un petit message pour ton Secret Santa ?</span>
+      <textarea name="message" rows="3" maxlength="1000" placeholder="Ex. : Merci d'avance, je suis sûr·e que ça me plaira !">{{ v.message }}</textarea>
+    </label>
+    <button class="btn btn-primary btn-block" type="submit">Enregistrer mes préférences 🎄</button>
+    {% if !first_time %}<a class="btn btn-ghost btn-block" href="/">Annuler</a>{% endif %}
+  </form>
+</section>
+{% endblock %}

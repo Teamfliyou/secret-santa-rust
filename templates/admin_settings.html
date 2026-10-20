@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card form-card">
+  <h1>Paramètres</h1>
+  <form method="post" action="/admin/settings" class="form">
+    <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+    <label class="field"><span>Nom de la classe</span><input type="text" name="class_name" value="{{ s.class_name }}" required maxlength="80"></label>
+    <label class="field"><span>Nom de l'événement</span><input type="text" name="event_name" value="{{ s.event_name }}" required maxlength="80"></label>
+    <label class="field"><span>Budget recommandé</span><input type="text" name="budget" value="{{ s.budget }}" maxlength="40" placeholder="Ex. : 10 €"></label>
+    <label class="field"><span>Date de remise des cadeaux</span><input type="date" name="exchange_date" value="{{ s.exchange_date }}"></label>
+    <label class="field"><span>Message d'accueil</span><textarea name="welcome_message" rows="3" maxlength="300">{{ s.welcome_message }}</textarea></label>
+    <button class="btn btn-primary btn-block" type="submit">Enregistrer</button>
+  </form>
+</section>
+{% endblock %}

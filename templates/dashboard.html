@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Bonjour {{ first_name }} <span class="wave" aria-hidden="true">👋</span></h1>
+  <p class="lead">{{ s.welcome_message }}</p>
+</section>
+
+{% if reveal_open && !revealed %}
+<section class="card reveal-card">
+  <p class="big-emoji float" aria-hidden="true">🎁</p>
+  <h2>Ton Secret Santa t'attend !</h2>
+  <p>Une personne de ta classe va recevoir un cadeau de ta part…</p>
+  <form method="post" action="/reveal" data-once>
+    <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+    <button class="btn btn-primary btn-lg" type="submit">Découvrir ma personne ✨</button>
+  </form>
+</section>
+{% else if reveal_open && revealed %}
+<section class="card reveal-card">
+  <p class="big-emoji float" aria-hidden="true">🎁</p>
+  <h2>Ta personne est connue</h2>
+  <p>Tu retrouves ici à tout moment la personne à qui tu offres un cadeau.</p>
+  <div class="btn-row">
+    <a class="btn btn-primary" href="/recipient">🎁 Voir mon destinataire</a>
+    <a class="btn btn-secondary" href="/recipient?anim=1">✉️ Revoir l'animation</a>
+  </div>
+</section>
+{% else %}
+<section class="card wait-card">
+  <p class="big-emoji" aria-hidden="true">🎄</p>
+  <h2>Tout est prêt !</h2>
+  <p>Tes préférences ont été enregistrées. Le tirage au sort n'est pas encore disponible.</p>
+  {% if revealed %}<p class="hint">La consultation de ton destinataire est temporairement suspendue par l'organisateur.</p>{% endif %}
+  <button class="btn btn-primary btn-lg" type="button" disabled>Découvrir ma personne ✨</button>
+</section>
+{% endif %}
+
+<div class="grid grid-3">
+  <section class="card info-card">
+    <h3><span aria-hidden="true">📝</span> Mes préférences</h3>
+    <p><span class="badge badge-ok">Enregistrées</span></p>
+    <a class="btn btn-secondary btn-sm" href="/preferences">Modifier mes préférences</a>
+  </section>
+  <section class="card info-card">
+    <h3><span aria-hidden="true">💶</span> Budget</h3>
+    <p class="stat">{{ s.budget }}</p>
+    <p class="hint">Budget recommandé</p>
+  </section>
+  <section class="card info-card">
+    <h3><span aria-hidden="true">📅</span> Remise des cadeaux</h3>
+    <p class="stat">{% if exchange_date.is_empty() %}À définir{% else %}{{ exchange_date }}{% endif %}</p>
+    <p class="hint">{{ s.class_name }} · {{ s.event_name }}</p>
+  </section>
+</div>
+{% endblock %}

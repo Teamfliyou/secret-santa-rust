@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Tirage au sort</h1>
+</section>
+
+{% if !draw_done %}
+<section class="card">
+  {% if total < 2 %}
+    <h2>Pas assez d'élèves</h2>
+    <p class="muted">Il faut au moins deux élèves pour faire le tirage.</p>
+  {% else if !pending.is_empty() %}
+    <h2>En attente des questionnaires</h2>
+    <p class="muted">{{ pending.len() }} élève{% if pending.len() > 1 %}s n'ont{% else %} n'a{% endif %} pas encore terminé :</p>
+    <ul class="chips">
+      {% for p in pending %}<li>{{ p }}</li>{% endfor %}
+    </ul>
+  {% else %}
+    <h2>Tout le monde est prêt 🎉</h2>
+    <p class="muted">Les {{ total }} élèves ont rempli leurs préférences.</p>
+  {% endif %}
+  {% if can_draw %}
+    <button class="btn btn-primary btn-lg" type="button" data-open="draw-dialog">🎲 Effectuer le tirage au sort</button>
+  {% else %}
+    <button class="btn btn-primary btn-lg" type="button" disabled>🎲 Effectuer le tirage au sort</button>
+  {% endif %}
+</section>
+
+<dialog id="draw-dialog" class="dialog">
+  <form method="post" action="/admin/draw" class="form">
+    <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+    <h2>Confirmer le tirage</h2>
+    <p>Tous les élèves ont rempli leurs préférences.</p>
+    <p><strong>Voulez-vous effectuer le tirage au sort ? Cette action est définitive.</strong></p>
+    <div class="btn-row">
+      <button class="btn btn-ghost" type="button" data-close>Annuler</button>
+      <button class="btn btn-primary" type="submit">Confirmer le tirage</button>
+    </div>
+  </form>
+</dialog>
+{% else %}
+<section class="card">
+  <h2>Tirage effectué</h2>
+  <p><span class="badge badge-ok">Le {{ drawn_at }} (UTC)</span> · {{ total }} attributions enregistrées, secrètes et définitives.</p>
+</section>
+
+<section class="card">
+  <h2>Révélations</h2>
+  <p class="muted">Tant que l'interrupteur est fermé, aucun élève ne peut découvrir sa personne. Tu peux le refermer à tout moment sans modifier les attributions.</p>
+  <form method="post" action="/admin/draw/reveal" class="switch-form">
+    <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+    {% if reveal_enabled %}
+      <input type="hidden" name="enabled" value="0">
+      <p><span class="badge badge-ok">Autorisées</span></p>
+      <button class="btn btn-secondary" type="submit">Suspendre les révélations</button>
+    {% else %}
+      <input type="hidden" name="enabled" value="1">
+      <p><span class="badge badge-warn">Fermées</span></p>
+      <button class="btn btn-primary btn-lg" type="submit">🔓 Autoriser les élèves à découvrir leur personne</button>
+    {% endif %}
+  </form>
+</section>
+
+<section class="card">
+  <h2>En cas de problème</h2>
+  <p class="muted">Consulter la liste complète des attributions est une action protégée et journalisée.</p>
+  <a class="btn btn-secondary" href="/admin/assignments">Consulter les attributions…</a>
+</section>
+{% endif %}
+{% endblock %}

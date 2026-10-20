@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block main_class %}container-wide{% endblock %}
+{% block content %}
+{% if let Some(list) = rows %}
+<section class="card">
+  <h1>Attributions</h1>
+  <div class="alert alert-info">Cette consultation a été enregistrée dans le journal. Ne partage ces informations avec personne.</div>
+  <div class="table-wrap">
+    <table class="table responsive">
+      <thead><tr><th>Donneur</th><th>Offre à</th><th>Révélé le</th></tr></thead>
+      <tbody>
+      {% for r in list %}
+        <tr><td data-label="Donneur">{{ r.giver }}</td><td data-label="Offre à">{{ r.receiver }}</td><td data-label="Révélé le">{{ r.revealed }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <a class="btn btn-ghost" href="/admin/draw">Retour</a>
+</section>
+{% else %}
+<section class="card form-card">
+  <h1>Consulter les attributions</h1>
+  <p class="muted">Pour préserver le secret, confirme ton mot de passe. Cet accès est journalisé.</p>
+  <form method="post" action="/admin/assignments" class="form">
+    <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+    <label class="field"><span>Mot de passe administrateur</span><input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn btn-primary btn-block" type="submit">Afficher</button>
+    <a class="btn btn-ghost btn-block" href="/admin/draw">Annuler</a>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

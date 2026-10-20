@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Tableau de bord</h1>
+  <p class="lead">Suis l'avancement de ton Secret Santa.</p>
+</section>
+
+<section class="card">
+  <h2>Questionnaires</h2>
+  <p class="big-line"><strong>{{ done }}</strong> élève{% if done > 1 %}s{% endif %} sur <strong>{{ total }}</strong> {% if done > 1 %}ont terminé{% else %}a terminé{% endif %}.</p>
+  <progress class="progress" value="{{ done }}" max="{% if total > 0 %}{{ total }}{% else %}1{% endif %}" aria-label="Questionnaires remplis"></progress>
+  <p class="hint">{{ pct }} % des questionnaires remplis.</p>
+</section>
+
+<div class="grid grid-4">
+  <section class="card stat-card"><p class="stat">{{ total }}</p><p class="hint">Élèves</p></section>
+  <section class="card stat-card"><p class="stat">{{ done }}</p><p class="hint">Questionnaires remplis</p></section>
+  <section class="card stat-card"><p class="stat">{{ pending }}</p><p class="hint">Pas encore terminés</p></section>
+  <section class="card stat-card"><p class="stat">{{ revealed_count }}</p><p class="hint">Ont découvert leur personne</p></section>
+</div>
+
+<section class="card">
+  <h2>État du tirage</h2>
+  {% if !draw_done %}
+    <p><span class="badge badge-warn">Pas encore effectué</span></p>
+    {% if pending > 0 %}<p class="muted">En attente des questionnaires.</p>{% endif %}
+  {% else %}
+    <p><span class="badge badge-ok">Tirage effectué</span>
+    {% if reveal_enabled %}<span class="badge badge-ok">Révélations ouvertes</span>{% else %}<span class="badge badge-warn">Révélations fermées</span>{% endif %}</p>
+  {% endif %}
+  <a class="btn btn-primary" href="/admin/draw">Gérer le tirage →</a>
+  <a class="btn btn-secondary" href="/admin/students">Gérer les élèves</a>
+</section>
+{% endblock %}

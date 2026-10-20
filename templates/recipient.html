@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block body_class %}scene-page{% endblock %}
+{% block main_class %}container-wide{% endblock %}
+{% block content %}
+<div class="scene" id="scene" data-anim="{% if anim %}1{% else %}0{% endif %}">
+  <div class="snow" aria-hidden="true"></div>
+  <div class="stage">
+    <div class="envelope" aria-hidden="true">
+      <div class="env-back"></div>
+      <div class="env-letter"><i></i><i></i><i></i></div>
+      <div class="env-front"></div>
+      <div class="env-flap"></div>
+      <div class="env-seal">✦</div>
+    </div>
+
+    <article class="paper" id="paper" aria-live="polite">
+      <p class="paper-kicker">🎄 Tu vas offrir un cadeau à…</p>
+      <h1 class="paper-name"><span>✨ {{ r.first_name }} {{ r.last_name }} ✨</span></h1>
+      <div class="confetti" id="confetti" aria-hidden="true"></div>
+
+      <div class="paper-body">
+        {% if !r.interests.is_empty() %}<section class="detail"><h2>🎯 Centres d'intérêt</h2><p>{{ r.interests }}</p></section>{% endif %}
+        {% if !r.hobbies.is_empty() %}<section class="detail"><h2>🕹️ Activités préférées</h2><p>{{ r.hobbies }}</p></section>{% endif %}
+        {% if !r.gift_types.is_empty() %}<section class="detail"><h2>🎀 Types de cadeaux</h2><p>{{ r.gift_types }}</p></section>{% endif %}
+        {% if !r.wishlist.is_empty() %}<section class="detail"><h2>💡 Idées de cadeaux</h2><p>{{ r.wishlist }}</p></section>{% endif %}
+        {% if !r.favorite_colors.is_empty() %}<section class="detail"><h2>🎨 Couleurs préférées</h2><p>{{ r.favorite_colors }}</p></section>{% endif %}
+        {% if !r.favorite_snacks.is_empty() %}<section class="detail"><h2>🍫 Snacks préférés</h2><p>{{ r.favorite_snacks }}</p></section>{% endif %}
+        {% if !r.dislikes.is_empty() %}<section class="detail"><h2>🚫 Ce qu'il ou elle n'aime pas</h2><p>{{ r.dislikes }}</p></section>{% endif %}
+        {% if !r.food_restrictions.is_empty() %}<section class="detail"><h2>🥗 Restrictions alimentaires</h2><p>{{ r.food_restrictions }}</p></section>{% endif %}
+        {% if !r.message.is_empty() %}<section class="detail detail-message"><h2>💌 Son message pour toi</h2><p>{{ r.message }}</p></section>{% endif %}
+        <section class="detail detail-budget"><h2>💶 Budget recommandé</h2><p class="stat">{{ budget }}</p></section>
+      </div>
+
+      <div class="paper-actions">
+        <a class="btn btn-primary" href="/">Retour à mon espace</a>
+        <a class="btn btn-ghost" href="/recipient?anim=1">✉️ Revoir l'animation</a>
+      </div>
+    </article>
+  </div>
+  <button type="button" class="skip" id="skip" hidden>Passer l'animation</button>
+</div>
+{% endblock %}

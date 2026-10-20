@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card form-card">
+  <h1>Modifier {{ s.first_name }} {{ s.last_name }}</h1>
+  <p>Questionnaire : {% if s.completed %}<span class="badge badge-ok">Terminé</span>{% else %}<span class="badge badge-warn">En attente</span>{% endif %}</p>
+  <form method="post" action="/admin/students/{{ s.id }}/edit" class="form">
+    <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+    <label class="field"><span>Prénom</span><input type="text" name="first_name" value="{{ s.first_name }}" required maxlength="60"></label>
+    <label class="field"><span>Nom</span><input type="text" name="last_name" value="{{ s.last_name }}" required maxlength="60"></label>
+    <label class="field"><span>Identifiant</span><input type="text" name="username" value="{{ s.username }}" required maxlength="40" autocapitalize="none"></label>
+    <button class="btn btn-primary btn-block" type="submit">Enregistrer</button>
+    <a class="btn btn-ghost btn-block" href="/admin/students">Retour à la liste</a>
+  </form>
+</section>
+{% endblock %}

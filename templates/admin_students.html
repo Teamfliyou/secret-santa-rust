@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block main_class %}container-wide{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Élèves</h1>
+  <p class="lead">{{ students.len() }} compte{% if students.len() > 1 %}s{% endif %} élève.</p>
+</section>
+
+{% if draw_done %}
+<div class="alert alert-info">Le tirage est effectué : on ne peut plus ajouter ni supprimer d'élève. Tu peux toujours modifier un élève ou réinitialiser son mot de passe.</div>
+{% else %}
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Ajouter un élève</h2>
+    <form method="post" action="/admin/students" class="form">
+      <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+      <label class="field"><span>Prénom</span><input type="text" name="first_name" required maxlength="60" autocomplete="off"></label>
+      <label class="field"><span>Nom</span><input type="text" name="last_name" required maxlength="60" autocomplete="off"></label>
+      <label class="field"><span>Identifiant (facultatif)</span><input type="text" name="username" maxlength="40" autocapitalize="none" autocomplete="off" placeholder="généré automatiquement"></label>
+      <button class="btn btn-primary" type="submit">Créer le compte</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>Importer un CSV</h2>
+    <p class="hint">Une ligne par élève : <code>prénom,nom</code> (ou avec <code>;</code>). Un identifiant peut être ajouté en 3ᵉ colonne.</p>
+    <form method="post" action="/admin/students/import" class="form">
+      <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+      <label class="field"><span>Fichier CSV (facultatif)</span><input type="file" accept=".csv,.txt,text/csv" data-csv-file></label>
+      <label class="field"><span>Contenu</span><textarea name="csv" rows="6" required spellcheck="false" data-csv-text placeholder="Emma,Martin&#10;Lucas,Dupont"></textarea></label>
+      <button class="btn btn-primary" type="submit">Importer</button>
+    </form>
+  </section>
+</div>
+{% endif %}
+
+<section class="card">
+  <h2>Liste des élèves</h2>
+  {% if students.is_empty() %}
+    <p class="muted">Aucun élève pour le moment.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="table responsive">
+      <thead><tr><th>Élève</th><th>Identifiant</th><th>Questionnaire</th><th>Révélation</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for st in students %}
+        <tr>
+          <td data-label="Élève"><strong>{{ st.first_name }} {{ st.last_name }}</strong></td>
+          <td data-label="Identifiant"><code>{{ st.username }}</code></td>
+          <td data-label="Questionnaire">{% if st.completed %}<span class="badge badge-ok">Terminé</span>{% else %}<span class="badge badge-warn">En attente</span>{% endif %}</td>
+          <td data-label="Révélation">{% if st.revealed %}<span class="badge badge-ok">Découvert</span>{% else %}<span class="badge">—</span>{% endif %}</td>
+          <td data-label="Actions" class="actions">
+            <a class="btn btn-secondary btn-sm" href="/admin/students/{{ st.id }}/edit">Modifier</a>
+            <form method="post" action="/admin/students/{{ st.id }}/reset" class="inline" data-confirm="Réinitialiser le mot de passe de {{ st.first_name }} ? Il en choisira un nouveau à sa prochaine connexion.">
+              <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+              <button class="btn btn-secondary btn-sm" type="submit">Réinitialiser le mot de passe</button>
+            </form>
+            {% if !draw_done %}
+            <form method="post" action="/admin/students/{{ st.id }}/delete" class="inline" data-confirm="Supprimer {{ st.first_name }} {{ st.last_name }} ? Cette action est définitive.">
+              <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+              <button class="btn btn-danger btn-sm" type="submit">Supprimer</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

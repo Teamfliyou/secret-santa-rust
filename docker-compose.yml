@@ -1,0 +1,22 @@
+services:
+  secret-santa:
+    build: .
+    container_name: secret-santa
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/santa.db
+      BIND_ADDR: 0.0.0.0:3000
+    ports:
+      # Exposé uniquement en local : le reverse proxy (HTTPS) s'y connecte.
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - santa-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  santa-data:
