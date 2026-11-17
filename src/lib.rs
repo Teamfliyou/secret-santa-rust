@@ -15,7 +15,8 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::Router;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use std::str::FromStr;
 use sqlx::PgPool;
 
 use crate::auth::RateLimiter;
@@ -31,10 +32,14 @@ pub struct AppState {
 }
 
 pub async fn connect(url: &str) -> anyhow::Result<PgPool> {
+    // Compatible avec le pooler Supabase/PgBouncer : ne pas conserver
+    // de prepared statements nommés entre les connexions réutilisées.
+    let options = PgConnectOptions::from_str(url)?
+        .statement_cache_capacity(0);
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .acquire_timeout(Duration::from_secs(10))
-        .connect(url)
+        .connect_with(options)
         .await?;
     Ok(pool)
 }
