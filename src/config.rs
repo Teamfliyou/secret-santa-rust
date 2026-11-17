@@ -27,7 +27,12 @@ impl Config {
         Self {
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "postgres://santa:santa@localhost:5432/santa".into()),
-            bind: env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into()),
+            bind: env::var("PORT")
+                .ok()
+                .and_then(|port| port.parse::<u16>().ok())
+                .map(|port| format!("127.0.0.1:{port}"))
+                .or_else(|| env::var("BIND_ADDR").ok())
+                .unwrap_or_else(|| "0.0.0.0:3000".into()),
             cookie_secure: flag("COOKIE_SECURE", false),
             trust_proxy: flag("TRUST_PROXY", false),
             admin_username: env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".into()),
