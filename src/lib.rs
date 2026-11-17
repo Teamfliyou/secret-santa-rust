@@ -34,8 +34,14 @@ pub struct AppState {
 pub async fn connect(url: &str) -> anyhow::Result<PgPool> {
     // Compatible avec le pooler Supabase/PgBouncer : ne pas conserver
     // de prepared statements nommés entre les connexions réutilisées.
-    let options = PgConnectOptions::from_str(url)?
-        .statement_cache_capacity(0);
+    // Le pooler transactionnel Supabase (6543) ne prend pas en charge
+    // les statements nommés utilisés par les migrations SQLx.
+    // Le même hôte Supavisor offre le mode session sur le port 5432.
+    let mut options = PgConnectOptions::from_str(url)?;
+    if options.get_port() == 6543 {
+        options = options.port(5432);
+    }
+    let options = options.statement_cache_capacity(0);
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .acquire_timeout(Duration::from_secs(10))
