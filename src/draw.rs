@@ -29,9 +29,9 @@ impl DrawError {
             DrawError::Incomplete(n) => {
                 format!("{n} élève(s) n'ont pas encore rempli leurs préférences.")
             }
-            DrawError::ProtectedPairMissing => "Le tirage exige la présence de Zayd Fliyou et Teo Dubar dans les élèves.".into(),
-            DrawError::ProtectedPairAmbiguous => "Plusieurs comptes correspondent à Zayd Fliyou ou Teo Dubar : corrige les doublons avant le tirage.".into(),
-            DrawError::ProtectedPairImpossible => "Le tirage nécessite au moins deux autres élèves, ou uniquement Zayd et Teo.".into(),
+            DrawError::ProtectedPairMissing => "Le tirage exige la présence de Moussa Traoré, Hossam Chaibi, Zayd Fliyou et Téo Dubar.".into(),
+            DrawError::ProtectedPairAmbiguous => "Plusieurs comptes correspondent à un des quatre élèves du groupe spécial : corrige les doublons avant le tirage.".into(),
+            DrawError::ProtectedPairImpossible => "Le tirage des autres élèves nécessite zéro ou au moins deux participants.".into(),
             DrawError::Db(_) => {
                 "Erreur de base de données pendant le tirage. Rien n'a été enregistré.".into()
             }
@@ -96,30 +96,57 @@ pub async fn perform_draw(
         return Err(DrawError::Incomplete(pending));
     }
 
-    // Règle privée de tirage : Zayd Fliyou et Teo Dubar sont réciproques.
-    // Comparaison insensible à la casse et aux espaces de début/fin.
-    // Ne jamais exposer cette règle dans l'interface des élèves.
+    // Groupe privé : seuls les échanges croisés entre les deux binômes sont autorisés.
+    // Moussa/Hossam ne peuvent pas se tirer ; Zayd/Téo non plus.
+    // Les quatre ne participent jamais au tirage du reste de la classe.
+    // Ne pas exposer cette règle dans l'interface des élèves.
     let special: Vec<(i64, String, String)> = sqlx::query_as(
         "SELECT id, lower(trim(first_name)), lower(trim(last_name))
          FROM users WHERE role = 'student'
-           AND ((lower(trim(first_name)) = 'zayd' AND lower(trim(last_name)) = 'fliyou')
-             OR (lower(trim(first_name)) = 'teo' AND lower(trim(last_name)) = 'dubar'))"
+           AND ((lower(trim(first_name)) = 'moussa' AND lower(trim(last_name)) = 'traoré')
+             OR (lower(trim(first_name)) = 'hossam' AND lower(trim(last_name)) = 'chaibi')
+             OR (lower(trim(first_name)) = 'zayd' AND lower(trim(last_name)) = 'fliyou')
+             OR (lower(trim(first_name)) IN ('teo', 'téo') AND lower(trim(last_name)) = 'dubar'))"
     )
     .fetch_all(&mut *tx)
     .await?;
-    let zayd: Vec<i64> = special.iter().filter(|(_, f, l)| f == "zayd" && l == "fliyou").map(|(id, _, _)| *id).collect();
-    let teo: Vec<i64> = special.iter().filter(|(_, f, l)| f == "teo" && l == "dubar").map(|(id, _, _)| *id).collect();
-    if zayd.len() > 1 || teo.len() > 1 {
+
+    let find = |first: &str, last: &str| -> Vec<i64> {
+        special.iter()
+            .filter(|(_, f, l)| (f == first || (first == "teo" && f == "téo")) && l == last)
+            .map(|(id, _, _)| *id)
+            .collect()
+    };
+    let moussa = find("moussa", "traoré");
+    let hossam = find("hossam", "chaibi");
+    let zayd = find("zayd", "fliyou");
+    let teo = find("teo", "dubar");
+    let groups = [&moussa, &hossam, &zayd, &teo];
+    if groups.iter().any(|group| group.len() > 1) {
         return Err(DrawError::ProtectedPairAmbiguous);
     }
-    if zayd.len() != 1 || teo.len() != 1 {
+    if groups.iter().any(|group| group.len() != 1) {
         return Err(DrawError::ProtectedPairMissing);
     }
-    let remaining: Vec<i64> = ids.iter().copied().filter(|id| *id != zayd[0] && *id != teo[0]).collect();
+
+    let protected = [moussa[0], hossam[0], zayd[0], teo[0]];
+    let remaining: Vec<i64> = ids.iter().copied()
+        .filter(|id| !protected.contains(id))
+        .collect();
     if remaining.len() == 1 {
         return Err(DrawError::ProtectedPairImpossible);
     }
-    let mut pairs = vec![(zayd[0], teo[0]), (teo[0], zayd[0])];
+
+    let mut right = [zayd[0], teo[0]];
+    right.shuffle(&mut OsRng);
+    let mut left = [moussa[0], hossam[0]];
+    left.shuffle(&mut OsRng);
+    let mut pairs = vec![
+        (moussa[0], right[0]),
+        (hossam[0], right[1]),
+        (zayd[0], left[0]),
+        (teo[0], left[1]),
+    ];
     if !remaining.is_empty() {
         pairs.extend(derangement(&remaining));
     }
