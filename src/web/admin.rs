@@ -771,8 +771,8 @@ pub async fn assignments_show(
     )
     .await?;
 
-    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
-        "SELECT g.first_name || ' ' || g.last_name, r.first_name || ' ' || r.last_name, a.revealed_at
+    let rows: Vec<(i64, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT g.id, g.first_name || ' ' || g.last_name, r.first_name || ' ' || r.last_name, a.revealed_at
          FROM assignments a JOIN users g ON g.id = a.giver_id JOIN users r ON r.id = a.receiver_id
          ORDER BY lower(g.last_name), lower(g.first_name)",
     )
@@ -780,7 +780,8 @@ pub async fn assignments_show(
     .await?;
     let rows = rows
         .into_iter()
-        .map(|(giver, receiver, rev)| AssignRow {
+        .map(|(giver_id, giver, receiver, rev)| AssignRow {
+            giver_id,
             giver,
             receiver,
             revealed: rev
@@ -794,6 +795,84 @@ pub async fn assignments_show(
         rows: Some(rows),
     })?
     .into_response())
+}
+
+
+#[derive(Deserialize)]
+pub struct SwapAssignmentsForm {
+    pub csrf: String,
+    pub password: String,
+    pub first_giver_id: i64,
+    pub second_giver_id: i64,
+}
+
+/// Échange uniquement deux destinataires, après confirmation admin.
+/// Aucun changement n'est autorisé si une attribution a déjà été révélée.
+pub async fn assignments_swap(
+    State(state): State<AppState>,
+    AdminSession(s): AdminSession,
+    Form(f): Form<SwapAssignmentsForm>,
+) -> Result<Response, AppError> {
+    s.check_csrf(&f.csrf)?;
+    let fail = |message: &str| {
+        let ctx = Ctx::session("Modifier les attributions", &s).error(message);
+        page(AssignmentsTemplate { ctx, rows: None })
+            .map(|html| (StatusCode::CONFLICT, html).into_response())
+    };
+    if f.first_giver_id == f.second_giver_id {
+        return fail("Sélectionne deux élèves différents.").map_err(AppError::from);
+    }
+    let key = format!("assign_swap:{}", s.user.id);
+    if state.limiter.is_blocked(&key, LOGIN_MAX_PER_USER, LOGIN_WINDOW) {
+        return fail("Trop de tentatives. Réessaie plus tard.").map_err(AppError::from);
+    }
+    let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
+        .bind(s.user.id).fetch_one(&state.db).await?;
+    if !verify_password_async(hash, f.password).await {
+        state.limiter.record(&key);
+        return fail("Mot de passe administrateur incorrect.").map_err(AppError::from);
+    }
+    state.limiter.clear(&key);
+    let mut tx = state.db.begin().await?;
+    // Verrouillage de l'événement : empêche deux corrections simultanées.
+    sqlx::query("SELECT id FROM event_settings WHERE id = 1 FOR UPDATE")
+        .fetch_one(&mut *tx).await?;
+    let pairs: Vec<(i64, i64, Option<String>)> = sqlx::query_as(
+        "SELECT giver_id, receiver_id, revealed_at FROM assignments
+         WHERE giver_id IN ($1, $2) ORDER BY giver_id FOR UPDATE"
+    ).bind(f.first_giver_id).bind(f.second_giver_id)
+     .fetch_all(&mut *tx).await?;
+    if pairs.len() != 2 {
+        return fail("Attributions introuvables.").map_err(AppError::from);
+    }
+    if pairs.iter().any(|p| p.2.is_some()) {
+        return fail("Modification bloquée : au moins un des deux élèves a déjà découvert son destinataire.").map_err(AppError::from);
+    }
+    let a = &pairs[0];
+    let b = &pairs[1];
+    if a.0 == b.1 || b.0 == a.1 {
+        return fail("Cet échange donnerait à un élève son propre nom.").map_err(AppError::from);
+    }
+    // Contrainte UNIQUE différée et dérogation au verrou d'immuabilité,
+    // limitées à cette transaction administrateur.
+    sqlx::query("SET CONSTRAINTS assignments_receiver_id_key DEFERRED")
+        .execute(&mut *tx).await?;
+    sqlx::query("SELECT set_config('santa.allow_assignment_swap', 'on', true)")
+        .execute(&mut *tx).await?;
+    sqlx::query(
+        "UPDATE assignments SET receiver_id = CASE giver_id
+            WHEN $1 THEN $4 WHEN $2 THEN $3 ELSE receiver_id END
+         WHERE giver_id IN ($1, $2)"
+    ).bind(a.0).bind(b.0).bind(a.1).bind(b.1)
+     .execute(&mut *tx).await?;
+    sqlx::query(
+        "INSERT INTO audit_log (actor_id, actor_name, action, details)
+         VALUES ($1, $2, 'assignment_swap', $3)"
+    ).bind(s.user.id).bind(&s.user.username)
+     .bind(format!("Échange des destinataires des donneurs #{} et #{}", a.0, b.0))
+     .execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(Redirect::to("/admin/assignments").into_response())
 }
 
 // ---------------------------------------------------------------- journal
