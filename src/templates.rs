@@ -107,6 +107,7 @@ pub struct Cred {
 
 #[derive(Clone)]
 pub struct AssignRow {
+    pub giver_id: i64,
     pub giver: String,
     pub receiver: String,
     pub revealed: String,
