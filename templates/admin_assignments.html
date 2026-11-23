@@ -19,6 +19,20 @@
   <p class="muted">Échange les destinataires de deux élèves uniquement. Les autres restent inchangés. Si l'un a déjà découvert son destinataire, la correction est bloquée. Répète l'opération pour modifier quatre élèves.</p>
   <form method="post" action="/admin/assignments/swap" class="form">
     <input type="hidden" name="csrf" value="{{ ctx.csrf }}">
+    <label class="field"><span>Premier élève</span>
+      <select name="first_giver_id" required>
+        {% for r in list %}<option value="{{ r.giver_id }}">{{ r.giver }} → {{ r.receiver }} (révélé : {{ r.revealed }})</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Deuxième élève</span>
+      <select name="second_giver_id" required>
+        {% for r in list %}<option value="{{ r.giver_id }}">{{ r.giver }} → {{ r.receiver }} (révélé : {{ r.revealed }})</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Confirmer avec le mot de passe administrateur</span>
+      <input type="password" name="password" required autocomplete="current-password">
+    </label>
+    <button type="submit" class="btn btn-primary">Échanger uniquement ces deux destinataires</button>
     <label class="field"><span>Premier élève</span><select name="first_giver_id" required><option value="">Choisir</option>{% for r in list %}<option value="{{ r.giver_id }}">{{ r.giver }}</option>{% endfor %}</select></label>
     <label class="field"><span>Deuxième élève</span><select name="second_giver_id" required><option value="">Choisir</option>{% for r in list %}<option value="{{ r.giver_id }}">{{ r.giver }}</option>{% endfor %}</select></label>
     <label class="field"><span>Confirmer avec le mot de passe administrateur</span><input type="password" name="password" required autocomplete="current-password"></label>
