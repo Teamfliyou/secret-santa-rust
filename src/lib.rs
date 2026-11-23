@@ -198,6 +198,7 @@ pub fn router(state: AppState) -> Router {
             "/admin/assignments",
             get(admin::assignments_page).post(admin::assignments_show),
         )
+        .route("/admin/assignments/swap", post(admin::assignments_swap))
         .route("/admin/audit", get(admin::audit_log_page))
         .fallback(public::not_found)
         .layer(DefaultBodyLimit::max(512 * 1024))
