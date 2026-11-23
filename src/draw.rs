@@ -100,27 +100,28 @@ pub async fn perform_draw(
     // Moussa/Hossam ne peuvent pas se tirer ; Zayd/Téo non plus.
     // Les quatre ne participent jamais au tirage du reste de la classe.
     // Ne pas exposer cette règle dans l'interface des élèves.
-    let special: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT id, lower(trim(first_name)), lower(trim(last_name))
-         FROM users WHERE role = 'student'
-           AND ((lower(trim(first_name)) = 'moussa' AND lower(trim(last_name)) = 'traoré')
-             OR (lower(trim(first_name)) = 'hossam' AND lower(trim(last_name)) = 'chaibi')
-             OR (lower(trim(first_name)) = 'zayd' AND lower(trim(last_name)) = 'fliyou')
-             OR (lower(trim(first_name)) IN ('teo', 'téo') AND lower(trim(last_name)) = 'dubar'))"
+    // Comparaison tolérante aux accents et à la casse, sans modifier les comptes.
+    // Le prénom Houcem est l'orthographe enregistrée pour Hossam Chaibi.
+    let students: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT id, first_name, last_name FROM users WHERE role = 'student'"
     )
     .fetch_all(&mut *tx)
     .await?;
 
-    let find = |first: &str, last: &str| -> Vec<i64> {
-        special.iter()
-            .filter(|(_, f, l)| (f == first || (first == "teo" && f == "téo")) && l == last)
+    let find = |first_names: &[&str], last: &str| -> Vec<i64> {
+        students.iter()
+            .filter(|(_, first, surname)| {
+                let first_key = crate::util::slugify(first);
+                let last_key = crate::util::slugify(surname);
+                first_names.contains(&first_key.as_str()) && last_key == last
+            })
             .map(|(id, _, _)| *id)
             .collect()
     };
-    let moussa = find("moussa", "traoré");
-    let hossam = find("hossam", "chaibi");
-    let zayd = find("zayd", "fliyou");
-    let teo = find("teo", "dubar");
+    let moussa = find(&["moussa"], "traore");
+    let hossam = find(&["hossam", "houcem"], "chaibi");
+    let zayd = find(&["zayd"], "fliyou");
+    let teo = find(&["teo"], "dubar");
     let groups = [&moussa, &hossam, &zayd, &teo];
     if groups.iter().any(|group| group.len() > 1) {
         return Err(DrawError::ProtectedPairAmbiguous);
